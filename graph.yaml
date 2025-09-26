@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create Neptune Analytics graph (private) to import from Neptune Serverless via import task
+
+Parameters:
+  GraphName:
+    Type: String
+    Default: neptune-analytics-graph
+    Description: Neptune Analytics graph name
+  ProvisionedMemory:
+    Type: Number
+    Default: 128
+    AllowedValues: [16, 32, 64, 128, 256, 512, 1024, 2048]
+    Description: m-NCUs for Neptune Analytics graph
+  ReplicaCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 15
+    Description: Analytics replicas for read scale-out
+  EnablePublicConnectivity:
+    Type: String
+    AllowedValues: ["true","false"]
+    Default: "false"
+    Description: true = public endpoint, false = private endpoint in VPC
+  DeletionProtection:
+    Type: String
+    AllowedValues: ["true","false"]
+    Default: "true"
+    Description: Protect graph from deletion
+
+  # Private endpoint settings (used if EnablePublicConnectivity=false)
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-xxxxxxxx
+    Description: VPC to place the private graph endpoint
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Default: subnet-xxxxxxxx
+    Description: Subnet for private graph endpoint
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-xxxxxxxx
+    Description: Security group attached to the private graph endpoint
+
+  # Optional vector index config
+  VectorDimension:
+    Type: Number
+    Default: 0
+    Description: Set >0 to enable vector search; 0 disables
+
+Conditions:
+  IsPrivate: !Equals [!Ref EnablePublicConnectivity, "false"]
+  HasVector: !Not [!Equals [!Ref VectorDimension, 0]]
+
+Resources:
+  Graph:
+    Type: AWS::NeptuneGraph::Graph
+    Properties:
+      GraphName: !Ref GraphName
+      ProvisionedMemory: !Ref ProvisionedMemory
+      ReplicaCount: !Ref ReplicaCount
+      PublicConnectivity: !If [IsPrivate, false, true]
+      DeletionProtection: !If [IsPrivate, !Equals [!Ref DeletionProtection, "true"], !Equals [!Ref DeletionProtection, "true"]]
+      Tags:
+        - Key: project
+          Value: neptune-analytics
+      VectorSearchConfiguration: !If
+        - HasVector
+        - VectorSearchDimension: !Ref VectorDimension
+        - !Ref AWS::NoValue
+
+  # Private endpoint for VPC-only access
+  PrivateGraphEndpoint:
+    Type: AWS::NeptuneGraph::PrivateGraphEndpoint
+    Condition: IsPrivate
+    Properties:
+      GraphIdentifier: !GetAtt Graph.GraphId
+      VpcId: !Ref VpcId
+      SubnetIds:
+        - !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+
+Outputs:
+  GraphId:
+    Description: Neptune Analytics GraphId
+    Value: !GetAtt Graph.GraphId
+    Export:
+      Name: !Sub "${AWS::StackName}-GraphId"
+  GraphArn:
+    Description: Neptune Analytics GraphArn
+    Value: !GetAtt Graph.GraphArn
+    Export:
+      Name: !Sub "${AWS::StackName}-GraphArn"
+  GraphEndpoint:
+    Description: Neptune Analytics graph endpoint (public if enabled)
+    Value: !GetAtt Graph.Endpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-GraphEndpoint"
