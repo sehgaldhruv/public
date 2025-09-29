@@ -28,21 +28,16 @@ Parameters:
     Default: "true"
     Description: Protect graph from deletion
 
-  # Private endpoint settings (used if EnablePublicConnectivity=false)
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Default: vpc-xxxxxxxx
-    Description: VPC to place the private graph endpoint
+    Default: vpc-03e59d4944227a873
   SubnetId:
     Type: AWS::EC2::Subnet::Id
-    Default: subnet-xxxxxxxx
-    Description: Subnet for private graph endpoint
+    Default: subnet-06c7170a96c9703f5
   SecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
-    Default: sg-xxxxxxxx
-    Description: Security group attached to the private graph endpoint
+    Default: sg-02a3749b424ec44d
 
-  # Optional vector index config
   VectorDimension:
     Type: Number
     Default: 0
@@ -50,7 +45,9 @@ Parameters:
 
 Conditions:
   IsPrivate: !Equals [!Ref EnablePublicConnectivity, "false"]
+  IsPublic: !Not [!Equals [!Ref EnablePublicConnectivity, "false"]]
   HasVector: !Not [!Equals [!Ref VectorDimension, 0]]
+  IsDeletionProtectionEnabled: !Equals [!Ref DeletionProtection, "true"]
 
 Resources:
   Graph:
@@ -60,16 +57,15 @@ Resources:
       ProvisionedMemory: !Ref ProvisionedMemory
       ReplicaCount: !Ref ReplicaCount
       PublicConnectivity: !If [IsPrivate, false, true]
-      DeletionProtection: !If [IsPrivate, !Equals [!Ref DeletionProtection, "true"], !Equals [!Ref DeletionProtection, "true"]]
+      DeletionProtection: !If [IsDeletionProtectionEnabled, true, false]
       Tags:
         - Key: project
           Value: neptune-analytics
       VectorSearchConfiguration: !If
         - HasVector
-        - VectorSearchDimension: !Ref VectorDimension
+        - { VectorSearchDimension: !Ref VectorDimension }
         - !Ref AWS::NoValue
 
-  # Private endpoint for VPC-only access
   PrivateGraphEndpoint:
     Type: AWS::NeptuneGraph::PrivateGraphEndpoint
     Condition: IsPrivate
